@@ -83,24 +83,43 @@ func isnotvcs(name string) bool {
 	return !ok
 }
 
+func lookup(fs Filesystem, paths []string, pkg string) (dir string, err error) {
+	for _, path := range paths {
+		dir = filepath.Join(path, "src", pkg)
+		if _, err = fs.Stat(dir); err == nil {
+			break
+		}
+	}
+	return
+}
+
 func (u Ungocheck) Files(pkgs []string) (files []string, err error) {
 	var (
-		wd    string
-		f     File
-		fi    []os.FileInfo
-		fs    = u.fs()
-		dirs  = make(map[string]struct{})
-		paths = strings.Split(os.Getenv("GOPATH"), string(os.PathListSeparator))
+		wd, dir string
+		f       File
+		fi      []os.FileInfo
+		fs      = u.fs()
+		dirs    = make(map[string]struct{})
+		paths   = strings.Split(os.Getenv("GOPATH"), string(os.PathListSeparator))
 	)
 	if wd, err = os.Getwd(); err != nil {
 		return
 	}
 	for _, pkg := range pkgs {
-		switch pkg {
-		case ".":
+		switch {
+		case pkg == ".":
 			dirs[wd] = struct{}{}
-		case "./...":
-			glob, dir := []string{wd}, ""
+		case strings.HasSuffix(pkg, "/..."):
+			var glob []string
+			pkg = pkg[:len(pkg)-4]
+			if pkg == "." {
+				glob = append(glob, wd)
+			} else {
+				if dir, err = lookup(fs, paths, pkg); err != nil {
+					return
+				}
+				glob = append(glob, dir)
+			}
 			for len(glob) > 0 {
 				dir, glob = glob[len(glob)-1], glob[:len(glob)-1]
 				if f, err = fs.Open(dir); err != nil {
@@ -119,13 +138,10 @@ func (u Ungocheck) Files(pkgs []string) (files []string, err error) {
 				dirs[dir] = struct{}{}
 			}
 		default:
-			for _, path := range paths {
-				dir := filepath.Join(path, "src", pkg)
-				if _, err = fs.Stat(dir); err == nil {
-					dirs[dir] = struct{}{}
-					break
-				}
+			if dir, err = lookup(fs, paths, pkg); err != nil {
+				return
 			}
+			dirs[dir] = struct{}{}
 		}
 	}
 	for dir := range dirs {
