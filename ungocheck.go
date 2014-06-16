@@ -67,25 +67,82 @@ func (u Ungocheck) Packages(args []string) (pkgs []string) {
 	return
 }
 
-func (u Ungocheck) Files(_ []string) (files []string, err error) {
-	// TODO(rjeczalik): implement directory/packages globbing
-	wd, err := os.Getwd()
-	if err != nil {
+func istestfile(name string) bool {
+	return strings.HasSuffix(name, "_test.go") && !strings.HasSuffix(name, "_ungocheck_test.go")
+}
+
+var vcs = map[string]struct{}{
+	".bzr": {},
+	".git": {},
+	".hg":  {},
+	".svn": {},
+}
+
+func isnotvcs(name string) bool {
+	_, ok := vcs[name]
+	return !ok
+}
+
+func (u Ungocheck) Files(pkgs []string) (files []string, err error) {
+	var (
+		wd    string
+		f     File
+		fi    []os.FileInfo
+		fs    = u.fs()
+		dirs  = make(map[string]struct{})
+		paths = strings.Split(os.Getenv("GOPATH"), string(os.PathListSeparator))
+	)
+	if wd, err = os.Getwd(); err != nil {
 		return
 	}
-	fs := u.fs()
-	dir, err := fs.Open(wd)
-	if err != nil {
-		return
+	for _, pkg := range pkgs {
+		switch pkg {
+		case ".":
+			dirs[wd] = struct{}{}
+		case "./...":
+			glob, dir := []string{wd}, ""
+			for len(glob) > 0 {
+				dir, glob = glob[len(glob)-1], glob[:len(glob)-1]
+				if f, err = fs.Open(dir); err != nil {
+					return
+				}
+				if fi, err = f.Readdir(0); err != nil {
+					f.Close()
+					return
+				}
+				f.Close()
+				for _, fi := range fi {
+					if fi.IsDir() && isnotvcs(fi.Name()) {
+						glob = append(glob, filepath.Join(dir, fi.Name()))
+					}
+				}
+				dirs[dir] = struct{}{}
+			}
+		default:
+			for _, path := range paths {
+				dir := filepath.Join(path, "src", pkg)
+				if _, err = fs.Stat(dir); err == nil {
+					dirs[dir] = struct{}{}
+					break
+				}
+			}
+		}
 	}
-	defer dir.Close()
-	fi, err := dir.Readdir(0)
-	if err != nil {
-		return
-	}
-	for _, fi := range fi {
-		if strings.HasSuffix(fi.Name(), "_test.go") && !strings.HasSuffix(fi.Name(), "_ungocheck_test.go") {
-			files = append(files, filepath.Join(wd, fi.Name()))
+	for dir := range dirs {
+		if f, err = fs.Open(dir); err != nil {
+			files = nil
+			return
+		}
+		if fi, err = f.Readdir(0); err != nil {
+			f.Close()
+			files = nil
+			return
+		}
+		f.Close()
+		for _, fi := range fi {
+			if !fi.IsDir() && istestfile(fi.Name()) {
+				files = append(files, filepath.Join(dir, fi.Name()))
+			}
 		}
 	}
 	return
@@ -166,7 +223,6 @@ func (u Ungocheck) rewriteSingle(file, test string) (n int, err error) {
 
 		w.Write(p)
 	}
-	_ = w
 	return
 }
 
