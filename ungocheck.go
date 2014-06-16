@@ -160,7 +160,10 @@ func (u Ungocheck) rewriteSingle(file, test string) (n int, err error) {
 		if m != nil && len(m) == 1 && len(m[0]) == 3 {
 			n += 1
 			p = []byte(fmt.Sprintf(f, m[0][1], m[0][2], m[0][2]))
+		} else if bytes.Contains(p, []byte("c *C")) {
+			p = bytes.Replace(p, []byte("c *C"), []byte("c *testing.T"), 1)
 		}
+
 		w.Write(p)
 	}
 	_ = w
