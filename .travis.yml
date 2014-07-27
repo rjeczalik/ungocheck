@@ -1,15 +1,19 @@
 language: go
+
 go:
  - 1.2.2
- - tip
+ - 1.3
+
 install:
  - go get code.google.com/p/go.tools/cmd/vet
  - go get -t -v ./...
  - export GOBIN=~/bin
- - export PATH=$PATH:~/bin
+ - export PATH=$GOBIN:$PATH
  - go install github.com/rjeczalik/ungocheck/cmd/ungocheck
+
 script:
  - go tool vet -all .
  - go build ./...
  - go test -race -v ./...
  - ungocheck -race -v ./...
+
