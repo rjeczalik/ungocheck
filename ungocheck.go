@@ -239,7 +239,6 @@ func (u Ungocheck) rewriteSingle(file, test string) (n int, err error) {
 
 		w.Write(p)
 	}
-	return
 }
 
 func (u Ungocheck) Run(args []string) (err error) {
